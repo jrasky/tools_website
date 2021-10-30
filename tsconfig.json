@@ -1,12 +1,13 @@
 {
   "compilerOptions": {
-    "target": "ES2018",
+    "target": "es2020",
     "module": "commonjs",
     "lib": [
-      "es2018"
+      "es2020"
     ],
     "declaration": true,
     "strict": true,
+    "esModuleInterop": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
     "noImplicitThis": true,
@@ -19,6 +20,7 @@
     "inlineSources": true,
     "experimentalDecorators": true,
     "strictPropertyInitialization": false,
+    "resolveJsonModule": true,
     "typeRoots": [
       "./node_modules/@types"
     ]
