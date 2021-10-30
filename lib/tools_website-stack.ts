@@ -2,6 +2,7 @@ import * as cdk from '@aws-cdk/core';
 import * as s3 from '@aws-cdk/aws-s3';
 import * as s3_deployment from '@aws-cdk/aws-s3-deployment';
 import * as route53 from '@aws-cdk/aws-route53';
+import * as route53_targets from '@aws-cdk/aws-route53-targets';
 import * as acm from '@aws-cdk/aws-certificatemanager';
 import * as cloudfront from '@aws-cdk/aws-cloudfront';
 import * as origins from '@aws-cdk/aws-cloudfront-origins';
@@ -12,40 +13,10 @@ import * as lambda_nodejs from '@aws-cdk/aws-lambda-nodejs';
 import * as logs from '@aws-cdk/aws-logs';
 import * as cr from '@aws-cdk/custom-resources';
 import { execSync } from 'child_process';
-import os from 'os';
-
-const HOSTED_ZONE_ID = 'Z006455334LOCYI1M47TX';
-const TOKEN_REDIRECT = 'https://tools.rasky.co/login';
 
 export class ToolsWebsiteStack extends cdk.Stack {
   constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
-
-    const zone = route53.HostedZone.fromHostedZoneId(this, 'ToolsHostedZone', HOSTED_ZONE_ID);
-
-    const cert = new acm.Certificate(this, 'Certificate', {
-      domainName: 'tools.rasky.co',
-      validation: acm.CertificateValidation.fromDns(zone),
-    });
-
-    const assetsBucket = new s3.Bucket(this, 'WebsiteAssets', {
-      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      versioned: true,
-    });
-
-    const cdnTriggerAssets = new s3.Bucket(this, 'CDNTriggerAssets', {
-      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      versioned: true,
-    });
-
-    const googleAppId = ssm.StringParameter.fromStringParameterName(this, 'GoogleAppId',
-      '/googleAppId',
-    ).stringValue;
-
-    const googleAppSecret = ssm.StringParameter.fromSecureStringParameterAttributes(this, 'GoogleAppSecret', {
-      parameterName: '/googleAppSecret',
-      version: 1,
-    }).stringValue;
 
     const userPool = new cognito.UserPool(this, 'ToolUsers', {
       selfSignUpEnabled: false,
@@ -60,6 +31,15 @@ export class ToolsWebsiteStack extends cdk.Stack {
     const domain = userPool.addDomain('AuthDomain', {
       cognitoDomain: { domainPrefix: 'rasky-tool-users' }
     });
+
+    const googleAppId = ssm.StringParameter.fromStringParameterName(this, 'GoogleAppId',
+      '/googleAppId',
+    ).stringValue;
+
+    const googleAppSecret = ssm.StringParameter.fromSecureStringParameterAttributes(this, 'GoogleAppSecret', {
+      parameterName: '/googleAppSecret',
+      version: 1,
+    }).stringValue;
 
     new cognito.UserPoolIdentityProviderGoogle(this, 'Google', {
       userPool,
@@ -80,9 +60,14 @@ export class ToolsWebsiteStack extends cdk.Stack {
           authorizationCodeGrant: true,
         },
         scopes: [cognito.OAuthScope.OPENID],
-        callbackUrls: ['https://tools.rasky.co/login']
+        callbackUrls: [this.node.tryGetContext('tokenRedirect')]
       },
     })
+
+    const cdnTriggerAssets = new s3.Bucket(this, 'CDNTriggerAssets', {
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      versioned: true,
+    });
 
     const bundleKeyPrefix = new Date().toISOString();
     const authBundle = new s3_deployment.BucketDeployment(this, 'AuthBundle', {
@@ -120,7 +105,7 @@ export class ToolsWebsiteStack extends cdk.Stack {
             'amazoncognito.com'
           ]),
           CLIENT_ID: appClient.userPoolClientId,
-          TOKEN_REDIRECT,
+          TOKEN_REDIRECT: this.node.tryGetContext('tokenRedirect'),
         },
       }),
       logRetention: logs.RetentionDays.ONE_MONTH,
@@ -145,7 +130,22 @@ export class ToolsWebsiteStack extends cdk.Stack {
       logRetention: logs.RetentionDays.ONE_MONTH,
     });
 
-    new cloudfront.Distribution(this, 'WebsiteCDN', {
+    const zone = route53.HostedZone.fromHostedZoneAttributes(this, 'ToolsHostedZone', {
+      hostedZoneId: this.node.tryGetContext('hostedZoneId'),
+      zoneName: this.node.tryGetContext('hostedZoneName'),
+    });
+
+    const cert = new acm.Certificate(this, 'Certificate', {
+      domainName: zone.zoneName,
+      validation: acm.CertificateValidation.fromDns(zone),
+    });
+
+    const assetsBucket = new s3.Bucket(this, 'WebsiteAssets', {
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      versioned: true,
+    });
+
+    const cdn = new cloudfront.Distribution(this, 'WebsiteCDN', {
       defaultBehavior: {
          origin: new origins.S3Origin(assetsBucket),
          edgeLambdas: [{
@@ -154,8 +154,18 @@ export class ToolsWebsiteStack extends cdk.Stack {
          }]
       },
       defaultRootObject: 'index.html',
-      domainNames: ['tools.rasky.co'],
+      domainNames: [zone.zoneName],
       certificate: cert,
+    });
+
+    new route53.ARecord(this, 'Alias', {
+      zone,
+      target: route53.RecordTarget.fromAlias(new route53_targets.CloudFrontTarget(cdn)),
+    });
+
+    new route53.AaaaRecord(this, 'AAAAlias', {
+      zone,
+      target: route53.RecordTarget.fromAlias(new route53_targets.CloudFrontTarget(cdn)),
     });
   }
 }
