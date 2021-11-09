@@ -16,6 +16,7 @@
     "@aws-cdk/aws-cloudfront:defaultSecurityPolicyTLSv1.2_2021": true,
     "hostedZoneId": "Z006455334LOCYI1M47TX",
     "hostedZoneName": "tools.rasky.co",
-    "tokenRedirect": "https://tools.rasky.co/login"
+    "tokenRedirect": "https://tools.rasky.co/login",
+    "cognitoDomainPrefix": "rasky-tool-users"
   }
 }

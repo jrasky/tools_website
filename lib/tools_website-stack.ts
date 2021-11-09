@@ -29,7 +29,7 @@ export class ToolsWebsiteStack extends cdk.Stack {
     });
 
     const domain = userPool.addDomain('AuthDomain', {
-      cognitoDomain: { domainPrefix: 'rasky-tool-users' }
+      cognitoDomain: { domainPrefix: this.node.tryGetContext('cognitoDomainPrefix') }
     });
 
     const googleAppId = ssm.StringParameter.fromStringParameterName(this, 'GoogleAppId',
@@ -143,6 +143,11 @@ export class ToolsWebsiteStack extends cdk.Stack {
     const assetsBucket = new s3.Bucket(this, 'WebsiteAssets', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       versioned: true,
+    });
+
+    new s3_deployment.BucketDeployment(this, 'DeployWebsite', {
+      sources: [s3_deployment.Source.asset('./node_modules/tools_website_assets/build')],
+      destinationBucket: assetsBucket
     });
 
     const cdn = new cloudfront.Distribution(this, 'WebsiteCDN', {
