@@ -1,4 +1,5 @@
 import * as cdk from '@aws-cdk/core';
+import * as iam from '@aws-cdk/aws-iam';
 import * as s3 from '@aws-cdk/aws-s3';
 import * as s3_deployment from '@aws-cdk/aws-s3-deployment';
 import * as route53 from '@aws-cdk/aws-route53';
@@ -18,14 +19,18 @@ export class ToolsWebsiteStack extends cdk.Stack {
   constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
+    const toolUsersParameter = ssm.StringListParameter.fromStringListParameterName(this,
+      'ToolUsersParam', '/tool_users');
+
+    const preSignUp = new lambda_nodejs.NodejsFunction(this, 'cognito-signup', {
+      timeout: cdk.Duration.seconds(5),
+      logRetention: logs.RetentionDays.ONE_MONTH,
+    });
+    toolUsersParameter.grantRead(preSignUp);
+
     const userPool = new cognito.UserPool(this, 'ToolUsers', {
       selfSignUpEnabled: false,
-      lambdaTriggers: {
-        preSignUp: new lambda_nodejs.NodejsFunction(this, 'cognito-signup', {
-          timeout: cdk.Duration.seconds(5),
-          logRetention: logs.RetentionDays.ONE_MONTH,
-        }),
-      },
+      lambdaTriggers: { preSignUp },
     });
 
     const domain = userPool.addDomain('AuthDomain', {
@@ -33,15 +38,12 @@ export class ToolsWebsiteStack extends cdk.Stack {
     });
 
     const googleAppId = ssm.StringParameter.fromStringParameterName(this, 'GoogleAppId',
-      '/googleAppId',
-    ).stringValue;
+      '/google_app_id').stringValue;
 
-    const googleAppSecret = ssm.StringParameter.fromSecureStringParameterAttributes(this, 'GoogleAppSecret', {
-      parameterName: '/googleAppSecret',
-      version: 1,
-    }).stringValue;
+    const googleAppSecret = ssm.StringParameter.fromStringParameterName(this, 'GoogleAppSecret', 
+      '/google_app_secret').stringValue;
 
-    new cognito.UserPoolIdentityProviderGoogle(this, 'Google', {
+    const identityProvider = new cognito.UserPoolIdentityProviderGoogle(this, 'Google', {
       userPool,
       clientId: googleAppId,
       clientSecret: googleAppSecret,
@@ -62,7 +64,8 @@ export class ToolsWebsiteStack extends cdk.Stack {
         scopes: [cognito.OAuthScope.OPENID],
         callbackUrls: [this.node.tryGetContext('tokenRedirect')]
       },
-    })
+    });
+    appClient.node.addDependency(identityProvider);
 
     const cdnTriggerAssets = new s3.Bucket(this, 'CDNTriggerAssets', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -92,22 +95,29 @@ export class ToolsWebsiteStack extends cdk.Stack {
       destinationKeyPrefix: bundleKeyPrefix,
     });
 
+    const onEventHandler = new lambda_nodejs.NodejsFunction(this, 'rebundle-env', {
+      timeout: cdk.Duration.minutes(5),
+      logRetention: logs.RetentionDays.ONE_MONTH,
+      environment: {
+        USER_POOL: userPool.userPoolId,
+        IDENTITY_DOMAIN: cdk.Fn.join('.', [
+          domain.domainName,
+          'auth',
+          this.region,
+          'amazoncognito.com'
+        ]),
+        CLIENT_ID: appClient.userPoolClientId,
+        TOKEN_REDIRECT: this.node.tryGetContext('tokenRedirect'),
+      },
+    });
+    cdnTriggerAssets.grantReadWrite(onEventHandler);
+    onEventHandler.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['cognito-idp:DescribeUserPoolClient'],
+      resources: [userPool.userPoolArn]
+    }));
+
     const rebundleEnv = new cr.Provider(this, 'RebundleEnv', {
-      onEventHandler: new lambda_nodejs.NodejsFunction(this, 'rebundle-env', {
-        timeout: cdk.Duration.minutes(5),
-        logRetention: logs.RetentionDays.ONE_MONTH,
-        environment: {
-          USER_POOL: userPool.userPoolId,
-          IDENTITY_DOMAIN: cdk.Fn.join('.', [
-            domain.domainName,
-            'auth',
-            this.region,
-            'amazoncognito.com'
-          ]),
-          CLIENT_ID: appClient.userPoolClientId,
-          TOKEN_REDIRECT: this.node.tryGetContext('tokenRedirect'),
-        },
-      }),
+      onEventHandler,
       logRetention: logs.RetentionDays.ONE_MONTH,
     })
 
