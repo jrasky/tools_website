@@ -22,7 +22,7 @@ export async function handler(event: PreSignUpExternalProviderTriggerEvent): Pro
     const userEmail = event.request.userAttributes.email;
     
     if (!toolUsers.has(userEmail)) {
-        throw new Error(`User ${userEmail} is unauthorized`);
+        throw new Error(`User ${userEmail} is not authorized`);
     }
 
     return {

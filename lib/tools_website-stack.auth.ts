@@ -23,7 +23,7 @@ const tokenURL = `https://${env.IDENTITY_DOMAIN}/oauth2/token`;
 const tokenRequestHeaders = {
     'Authorization': `Basic ${Buffer.from(`${env.CLIENT_ID}:${env.CLIENT_SECRET}`).toString('base64')}`
 };
-const cognitoIssuer = `https://cognito-idp.us-west-2.amazonaws.com/${env.USER_POOL}`
+const cognitoIssuer = `https://cognito-idp.us-east-1.amazonaws.com/${env.USER_POOL}`
 const refreshTokenMaxAge = 30 * 24 * 60 * 60; // 30 days in seconds
 
 const JWKS = createRemoteJWKSet(new URL(`${cognitoIssuer}/.well-known/jwks.json`));

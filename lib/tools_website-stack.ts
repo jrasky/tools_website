@@ -47,6 +47,7 @@ export class ToolsWebsiteStack extends cdk.Stack {
       userPool,
       clientId: googleAppId,
       clientSecret: googleAppSecret,
+      scopes: ['profile', 'email', 'openid'],
       attributeMapping: {
         email: cognito.ProviderAttribute.GOOGLE_EMAIL,
         givenName: cognito.ProviderAttribute.GOOGLE_GIVEN_NAME,
@@ -56,6 +57,7 @@ export class ToolsWebsiteStack extends cdk.Stack {
 
     const appClient = userPool.addClient('WebsiteAuth', {
       supportedIdentityProviders: [cognito.UserPoolClientIdentityProvider.GOOGLE],
+      generateSecret: true,
       preventUserExistenceErrors: true,
       oAuth: {
         flows: {
@@ -82,7 +84,7 @@ export class ToolsWebsiteStack extends cdk.Stack {
               execSync([
                 'npx esbuild lib/tools_website-stack.auth.ts',
                 '--bundle --platform=node --external:aws-sdk',
-                '--external:*.json --minify',
+                '--external:*/env.json --minify',
                 `--outfile=${outputDir}/index.js`
               ].join(' '));
 
@@ -139,6 +141,9 @@ export class ToolsWebsiteStack extends cdk.Stack {
         rebundledAuthHandler.getAttString('outputKey')),
       logRetention: logs.RetentionDays.ONE_MONTH,
     });
+    const authHandlerVersion = new lambda.Version(this, `auth-${bundleKeyPrefix}`, {
+      lambda: authHandler,
+    });
 
     const zone = route53.HostedZone.fromHostedZoneAttributes(this, 'ToolsHostedZone', {
       hostedZoneId: this.node.tryGetContext('hostedZoneId'),
@@ -164,13 +169,15 @@ export class ToolsWebsiteStack extends cdk.Stack {
       defaultBehavior: {
          origin: new origins.S3Origin(assetsBucket),
          edgeLambdas: [{
-           functionVersion: authHandler.currentVersion,
+           functionVersion: authHandlerVersion,
            eventType: cloudfront.LambdaEdgeEventType.VIEWER_REQUEST,
-         }]
+         }],
+         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
       },
       defaultRootObject: 'index.html',
       domainNames: [zone.zoneName],
       certificate: cert,
+      priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
     });
 
     new route53.ARecord(this, 'Alias', {

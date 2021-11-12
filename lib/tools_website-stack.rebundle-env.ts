@@ -74,12 +74,17 @@ async function injectPayload(props: ResourceProperties) {
         ClientId: process.env.CLIENT_ID as string,
     }).promise();
 
+    const clientSecret = appClient.UserPoolClient?.ClientSecret;
+    if (!clientSecret) {
+        throw new Error('Failed to find client secret');
+    }
+
     const env = {
         USER_POOL: process.env.USER_POOL,
         IDENTITY_DOMAIN: process.env.IDENTITY_DOMAIN,
         TOKEN_REDIRECT: process.env.TOKEN_REDIRECT,
         CLIENT_ID: process.env.CLIENT_ID,
-        CLIENT_SECRET: appClient.UserPoolClient?.ClientSecret,
+        CLIENT_SECRET: clientSecret,
     };
 
     const zip = new JSZip();
@@ -105,13 +110,15 @@ export async function handler(event: Event): Promise<Response> {
         case 'Create':
         case 'Update':
             await injectPayload(event.ResourceProperties);
-        default:
-    }
 
-    return {
-        Data: {
-            outputBucket: event.ResourceProperties.payloadBucket,
-            outputKey: event.ResourceProperties.outputKey,
-        }
+            return {
+                PhysicalResourceId: event.ResourceProperties.outputKey,
+                Data: {
+                    outputBucket: event.ResourceProperties.payloadBucket,
+                    outputKey: event.ResourceProperties.outputKey,
+                }
+            }
+        default:
+            return {};
     }
 }
