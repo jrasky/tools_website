@@ -38,7 +38,7 @@
     "jest": "^27.3.1",
     "jose": "^4.1.2",
     "jszip": "^3.7.1",
-    "node-fetch": "^2.6.6",
+    "node-fetch": "^2.6.7",
     "source-map-support": "^0.5.16",
     "tools_website_assets": "file:../tools_website_assets",
     "ts-jest": "^27.0.7",
