@@ -37,7 +37,7 @@
     "eslint": "^8.1.0",
     "jest": "^27.3.1",
     "jose": "^4.1.2",
-    "jszip": "^3.7.1",
+    "jszip": "^3.8.0",
     "node-fetch": "^2.6.7",
     "source-map-support": "^0.5.16",
     "tools_website_assets": "file:../tools_website_assets",
